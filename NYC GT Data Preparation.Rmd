@@ -1,0 +1,155 @@
+---
+title: "NYC GT data"
+author: "Pengruijie Zhou"
+date: "2025-03-08"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load libraries and read files
+```{r message=FALSE, warning=FALSE}
+# Load necessary libraries
+library(readxl)
+library(dplyr)
+
+# Read the Excel files
+setwd("C:/Users/78789/Desktop/McDaniel/ANA515/DATA")
+df1 <- read_excel("G&T Results 2017-18 Responses.xlsx")
+df2 <- read_excel("G&T Results 2018-19 Responses.xlsx")
+```
+
+## Standardizing column names
+
+The first 12 columns are identical in both datasets, while the 2018-19 dataset has two extra columns: 'Unnamed: 12' and 'Unnamed: 13'. These seem unnecessary. So, I removed the extra columns from the 2018-19 dataset and ensured that both datasets have the exact same column names.
+
+```{r message=FALSE, warning=FALSE}
+# Keep only columns present in df1
+df2 <- df2[, names(df1)]  
+
+# Print column names to verify
+print(names(df1))
+print(names(df2))
+```
+
+
+## Handling data types
+
+Now that both datasets have standardized column names, the next step is ensuring that each column has the correct data type. There are some issues with the data types:
+
+1. Timestamp Column is stored as text (character), and should be converted to Date-Time format;
+2. District Column has inconsistent data types in two files:it is stored as character (text)in df1 and stored as numeric in df2. Should be converted both to numeric;
+3. Some scores of OLSAT and NNAT Score Columns are stored as text (e.g., "28/30") and should be converted to numeric.
+
+```{r message=FALSE, warning=FALSE}
+# Convert Timestamp to Date-Time format
+df1$Timestamp <- as.POSIXct(df1$Timestamp, format="%Y-%m-%d %H:%M:%S")
+df2$Timestamp <- as.POSIXct(df2$Timestamp, format="%Y-%m-%d %H:%M:%S")
+
+# Convert District to numeric
+df1$District <- as.numeric(df1$District)
+df2$District <- as.numeric(df2$District)
+
+# Extract and convert scores from "28/30" format to numeric
+# Function to extract numeric value from "28/30" format
+extract_score <- function(score) {
+  return(as.numeric(sub("/.*", "", score))) # Extract first number before "/"
+}
+
+# Apply function to relevant columns
+df1$`OLSAT Verbal Score` <- sapply(df1$`OLSAT Verbal Score`, extract_score)
+df1$`NNAT Non Verbal Raw Score` <- sapply(df1$`NNAT Non Verbal Raw Score`, extract_score)
+
+df2$`OLSAT Verbal Score` <- sapply(df2$`OLSAT Verbal Score`, extract_score)
+df2$`NNAT Non Verbal Raw Score` <- sapply(df2$`NNAT Non Verbal Raw Score`, extract_score)
+
+# Check data structure after conversion
+str(df1)
+str(df2)
+```
+
+## Handling critical missing values
+
+In this dataset, I encountered missing values in several columns, including District, School Preferences, School Assigned, and Will you enroll there?. 
+
+For critical variables such as Timestamp, OLSAT Verbal Score, NNAT Non-Verbal Raw Score, and Overall Score, I chose to remove rows with missing values to ensure data accuracy and completeness for analysis.
+
+However, for non-critical variables like District, I retained the missing values because they were originally absent in the 2017-18 dataset, and imputing them without reliable external data could introduce bias.
+
+Similarly, I kept missing values in School Preferences, School Assigned, and Will you enroll there?, as these were optional responses that do not impact the core analysis. 
+
+```{r message=FALSE, warning=FALSE}
+# Count missing values in each dataset
+missing_df1 <- colSums(is.na(df1))
+missing_df2 <- colSums(is.na(df2))
+
+# Print missing value counts
+print(missing_df1)
+print(missing_df2)
+
+# Remove rows where Timestamp is missing
+df1 <- df1[!is.na(df1$Timestamp), ]
+df2 <- df2[!is.na(df2$Timestamp), ]
+
+# Remove rows where OLSAT Verbal Score, NNAT Non-Verbal Raw Score are missing
+df1 <- df1[!is.na(df1$`OLSAT Verbal Score`) & !is.na(df1$`NNAT Non Verbal Raw Score`), ]
+df2 <- df2[!is.na(df2$`OLSAT Verbal Score`) & !is.na(df2$`NNAT Non Verbal Raw Score`), ]
+
+# Print missing values again to verify
+print(colSums(is.na(df1)))
+print(colSums(is.na(df2)))
+```
+
+## Merging the two datasets
+
+Now that all critical missing values have been removed, I then merged the 2017-18 and 2018-19 datasets into a single dataset.
+
+```{r message=FALSE, warning=FALSE}
+# Add a new column "Year" to distinguish the datasets
+df1$Year <- "2017-18"
+df2$Year <- "2018-19"
+
+# Combine the datasets
+final_df <- rbind(df1, df2)
+
+# Print the structure to verify merge success
+str(final_df)
+```
+
+##  Data visualization
+
+I chose two visualizations to effectively highlight key aspects of the dataset. 
+
+The histogram of OLSAT Verbal Scores allows me to visualize the distribution of student scores, helping to identify patterns such as normality, skewness, or clustering within specific ranges. This provides insight into overall performance trends. 
+
+I also chose the boxplot of Overall Scores by Year to compare the 2017-18 and 2018-19 datasets, as it clearly shows differences in median scores, quartiles, and potential outliers. This helps me determine whether student performance varied across years and if there were any significant fluctuations. 
+
+Together, these visualizations offer a comprehensive view of score distributions and year-over-year trends, making them essential for analyzing the dataset effectively.
+
+```{r message=FALSE, warning=FALSE}
+# Load necessary visualization libraries
+library(ggplot2)
+
+# Histogram of OLSAT Verbal Scores
+ggplot(final_df, aes(x = `OLSAT Verbal Score`)) +
+  geom_histogram(binwidth = 2, fill = "blue", color = "black", alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "Distribution of OLSAT Verbal Scores", x = "OLSAT Verbal Score", y = "Count")
+
+# Boxplot of Overall Scores by Year
+ggplot(final_df, aes(x = Year, y = `Overall Score`, fill = Year)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "Boxplot of Overall Scores by Year", x = "Year", y = "Overall Score") +
+  scale_fill_manual(values = c("2017-18" = "red", "2018-19" = "green"))
+```
+
+
+## Save cleaned data
+```{r message=FALSE, warning=FALSE}
+# Save the cleaned dataset as a CSV file
+write.csv(final_df, "final_df.csv", row.names = FALSE)
+```
+
